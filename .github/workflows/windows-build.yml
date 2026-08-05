@@ -31,12 +31,15 @@ jobs:
       - name: Fetch ffmpeg (build with libass)
         shell: pwsh
         run: |
-          # BtbN's shared LGPL win64 build: carries libass (which the `ass` filter
-          # needs) but is ~190 MB smaller than the static build, because the codecs
-          # live in DLLs shared by ffmpeg.exe and ffprobe.exe instead of being
-          # duplicated into both. Hosted on GitHub releases — gyan.dev answers CI
-          # runners with a 503.
-          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl-shared.zip"
+          # BtbN's shared GPL win64 build. Two requirements pin this exact variant:
+          #   - gpl, not lgpl: the LGPL builds ship without libx264, and burn.py
+          #     encodes with -c:v libx264. An lgpl build transcribes fine and then
+          #     fails at export.
+          #   - shared, not static: the static build duplicates every codec into
+          #     both ffmpeg.exe and ffprobe.exe (145 MB each).
+          # libass is present in both, which is what the `ass` filter needs.
+          # Hosted on GitHub releases — gyan.dev answers CI runners with a 503.
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
           for ($i = 1; $i -le 3; $i++) {
             try { Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip; break }
             catch { if ($i -eq 3) { throw }; Start-Sleep -Seconds 15 }
@@ -48,6 +51,7 @@ jobs:
           $bin = Get-ChildItem -Path ffmpeg-src -Recurse -Directory -Filter bin |
             Select-Object -First 1
           Copy-Item "$($bin.FullName)\*" packaging/ffmpeg/ -Recurse
+          Remove-Item packaging/ffmpeg/ffplay.exe -ErrorAction SilentlyContinue
           # Fail loudly here rather than shipping a build that cannot burn.
           $filters = & packaging/ffmpeg/ffmpeg.exe -hide_banner -filters
           if (-not ($filters -match '\sass\s')) {
@@ -59,6 +63,27 @@ jobs:
 
       - name: Add the user-facing readme
         run: copy packaging\READ_ME_FIRST.txt dist\auto_sub\READ_ME_FIRST.txt
+
+      - name: Burn a real subtitle with the bundled ffmpeg
+        shell: pwsh
+        run: |
+          # The filter being listed is not proof it works. Actually burn an .ass
+          # onto a generated clip — this is the failure that would otherwise only
+          # surface on a user's machine at step 4.
+          python -c @"
+          import sys
+          sys.path.insert(0, '.')
+          from auto_sub.core.ass_writer import write_ass
+          from auto_sub.core.models import Segment, Style
+          write_ass('t.ass', [Segment(start=0.0, end=2.0, text='مرحبا بالعالم')],
+                    Style(), 640, 480)
+          "@
+          $ff = "dist/auto_sub/_internal/ffmpeg/ffmpeg.exe"
+          & $ff -y -f lavfi -i testsrc=size=640x480:duration=3 `
+                -vf "ass=f=t.ass:fontsdir=auto_sub/assets" -c:v libx264 out.mp4
+          if ($LASTEXITCODE -ne 0) { throw "bundled ffmpeg could not burn subtitles" }
+          if (-not (Test-Path out.mp4)) { throw "no output produced" }
+          Write-Host "burned OK: $((Get-Item out.mp4).Length) bytes"
 
       - name: Smoke-test the executable
         shell: pwsh

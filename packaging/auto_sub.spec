@@ -33,13 +33,18 @@ hiddenimports += [
     "huggingface_hub",
 ]
 
-# ffmpeg.exe / ffprobe.exe are fetched by the CI workflow into packaging/ffmpeg/.
+# ffmpeg is fetched by the CI workflow into packaging/ffmpeg/ (exes + their DLLs).
 # core/burn.py looks for an `ffmpeg` folder next to the executable.
+#
+# These go in `datas`, NOT `binaries`: PyInstaller dependency-scans everything in
+# `binaries` and copies each DLL a second time into the bundle root, which cost
+# ~130 MB of pure duplication. `datas` is copied verbatim. ffmpeg.exe finds its
+# own DLLs because Windows resolves them from the executable's directory.
 import os
 _ffmpeg_dir = os.path.join(os.path.dirname(os.path.abspath(SPEC)), "ffmpeg")
 if os.path.isdir(_ffmpeg_dir):
     for name in os.listdir(_ffmpeg_dir):
-        binaries += [(os.path.join(_ffmpeg_dir, name), "ffmpeg")]
+        datas += [(os.path.join(_ffmpeg_dir, name), "ffmpeg")]
 
 
 a = Analysis(
