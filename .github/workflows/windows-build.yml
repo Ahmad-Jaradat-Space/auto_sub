@@ -1,0 +1,65 @@
+name: Build Windows app
+
+# Builds the portable Windows folder. PyInstaller cannot cross-compile, so this
+# runs on a Windows runner — no Windows machine needed locally.
+#
+# Run it from the Actions tab ("Run workflow"), then download the
+# `auto_sub-windows` artifact and send that zip to the users.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pyinstaller
+
+      - name: Fetch ffmpeg (build with libass)
+        shell: pwsh
+        run: |
+          # gyan.dev "essentials" builds include libass, which the `ass` filter needs.
+          $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-src
+          New-Item -ItemType Directory -Force -Path packaging/ffmpeg | Out-Null
+          Get-ChildItem -Path ffmpeg-src -Recurse -Include ffmpeg.exe,ffprobe.exe |
+            ForEach-Object { Copy-Item $_.FullName packaging/ffmpeg/ }
+          # Fail loudly here rather than shipping a build that cannot burn.
+          $filters = & packaging/ffmpeg/ffmpeg.exe -hide_banner -filters
+          if (-not ($filters -match '\sass\s')) {
+            throw "bundled ffmpeg was built without libass - the ass filter is missing"
+          }
+
+      - name: Build
+        run: pyinstaller packaging/auto_sub.spec --noconfirm
+
+      - name: Add the user-facing readme
+        run: copy packaging\READ_ME_FIRST.txt dist\auto_sub\READ_ME_FIRST.txt
+
+      - name: Smoke-test the executable
+        shell: pwsh
+        run: |
+          # Launch headless-ish and make sure it does not crash on import.
+          $p = Start-Process -FilePath dist/auto_sub/auto_sub.exe -PassThru
+          Start-Sleep -Seconds 25
+          if ($p.HasExited) { throw "auto_sub.exe exited with $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auto_sub-windows
+          path: dist/auto_sub

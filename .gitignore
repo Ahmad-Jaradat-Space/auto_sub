@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.DS_Store
+/tmp_preview/
+
+# Test media and model weights — far too large for the repo.
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.subbed.ass
+*.pt
+/videos/
+
+# Fetched by the Windows build workflow, never committed.
+/packaging/ffmpeg/

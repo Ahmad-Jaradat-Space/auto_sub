@@ -1,0 +1,27 @@
+[project]
+name = "auto_sub"
+version = "0.1.0"
+description = "Local GUI to transcribe English video, paste-translate to Arabic, and burn styled subtitles via ffmpeg."
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.6",
+    "faster-whisper>=1.0",
+    "opencv-python>=4.10",
+]
+
+[project.optional-dependencies]
+# Whole-body vertical reframing (drags in PyTorch, ~500 MB).
+yolo = ["ultralytics>=8.3"]
+
+[project.scripts]
+auto-sub = "auto_sub.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["auto_sub*"]
+
+[tool.setuptools.package-data]
+auto_sub = ["assets/*.ttf"]
