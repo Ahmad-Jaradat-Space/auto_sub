@@ -61,8 +61,15 @@ jobs:
       - name: Build
         run: pyinstaller packaging/auto_sub.spec --noconfirm
 
-      - name: Add the user-facing readme
-        run: copy packaging\READ_ME_FIRST.txt dist\auto_sub\READ_ME_FIRST.txt
+      - name: Add ffmpeg and the user-facing readme
+        shell: pwsh
+        run: |
+          # Copied after the build on purpose — see the note in auto_sub.spec.
+          Copy-Item packaging/ffmpeg dist/auto_sub/ffmpeg -Recurse
+          Copy-Item packaging/READ_ME_FIRST.txt dist/auto_sub/READ_ME_FIRST.txt
+          $mb = (Get-ChildItem dist/auto_sub -Recurse -File |
+                 Measure-Object Length -Sum).Sum / 1MB
+          Write-Host ("bundle size: {0:N0} MB" -f $mb)
 
       - name: Burn a real subtitle with the bundled ffmpeg
         shell: pwsh
@@ -78,7 +85,7 @@ jobs:
           write_ass('t.ass', [Segment(start=0.0, end=2.0, text='مرحبا بالعالم')],
                     Style(), 640, 480)
           "@
-          $ff = "dist/auto_sub/_internal/ffmpeg/ffmpeg.exe"
+          $ff = "dist/auto_sub/ffmpeg/ffmpeg.exe"
           & $ff -y -f lavfi -i testsrc=size=640x480:duration=3 `
                 -vf "ass=f=t.ass:fontsdir=auto_sub/assets" -c:v libx264 out.mp4
           if ($LASTEXITCODE -ne 0) { throw "bundled ffmpeg could not burn subtitles" }

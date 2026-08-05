@@ -33,18 +33,14 @@ hiddenimports += [
     "huggingface_hub",
 ]
 
-# ffmpeg is fetched by the CI workflow into packaging/ffmpeg/ (exes + their DLLs).
-# core/burn.py looks for an `ffmpeg` folder next to the executable.
+# NOTE: ffmpeg is deliberately NOT listed here. The workflow copies it into
+# dist/auto_sub/ffmpeg/ *after* this spec runs.
 #
-# These go in `datas`, NOT `binaries`: PyInstaller dependency-scans everything in
-# `binaries` and copies each DLL a second time into the bundle root, which cost
-# ~130 MB of pure duplication. `datas` is copied verbatim. ffmpeg.exe finds its
-# own DLLs because Windows resolves them from the executable's directory.
-import os
-_ffmpeg_dir = os.path.join(os.path.dirname(os.path.abspath(SPEC)), "ffmpeg")
-if os.path.isdir(_ffmpeg_dir):
-    for name in os.listdir(_ffmpeg_dir):
-        datas += [(os.path.join(_ffmpeg_dir, name), "ffmpeg")]
+# Handing it to PyInstaller — via `binaries` or `datas`, it makes no difference —
+# triggers "binary vs. data reclassification", which dependency-scans the DLLs and
+# copies each one a second time into the bundle root: ~130 MB of pure duplication.
+# core/burn.py::_bundle_dirs() looks for `ffmpeg/` next to the exe, so a plain
+# post-build copy is both smaller and simpler.
 
 
 a = Analysis(
