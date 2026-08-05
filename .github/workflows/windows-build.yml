@@ -31,17 +31,23 @@ jobs:
       - name: Fetch ffmpeg (build with libass)
         shell: pwsh
         run: |
-          # BtbN's static win64 build includes libass, which the `ass` filter needs.
-          # Hosted on GitHub releases — gyan.dev rate-limits CI runners with a 503.
-          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          # BtbN's shared LGPL win64 build: carries libass (which the `ass` filter
+          # needs) but is ~190 MB smaller than the static build, because the codecs
+          # live in DLLs shared by ffmpeg.exe and ffprobe.exe instead of being
+          # duplicated into both. Hosted on GitHub releases — gyan.dev answers CI
+          # runners with a 503.
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl-shared.zip"
           for ($i = 1; $i -le 3; $i++) {
             try { Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip; break }
             catch { if ($i -eq 3) { throw }; Start-Sleep -Seconds 15 }
           }
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-src
           New-Item -ItemType Directory -Force -Path packaging/ffmpeg | Out-Null
-          Get-ChildItem -Path ffmpeg-src -Recurse -Include ffmpeg.exe,ffprobe.exe |
-            ForEach-Object { Copy-Item $_.FullName packaging/ffmpeg/ }
+          # Take the whole bin/ — the exes need their sibling DLLs, and Windows
+          # resolves those from the executable's own directory.
+          $bin = Get-ChildItem -Path ffmpeg-src -Recurse -Directory -Filter bin |
+            Select-Object -First 1
+          Copy-Item "$($bin.FullName)\*" packaging/ffmpeg/ -Recurse
           # Fail loudly here rather than shipping a build that cannot burn.
           $filters = & packaging/ffmpeg/ffmpeg.exe -hide_banner -filters
           if (-not ($filters -match '\sass\s')) {
