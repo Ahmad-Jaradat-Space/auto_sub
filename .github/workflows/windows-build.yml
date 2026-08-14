@@ -14,6 +14,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write   # needed to publish the release on a tag
 
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +69,7 @@ jobs:
           # Copied after the build on purpose — see the note in auto_sub.spec.
           Copy-Item packaging/ffmpeg dist/auto_sub/ffmpeg -Recurse
           Copy-Item packaging/READ_ME_FIRST.txt dist/auto_sub/READ_ME_FIRST.txt
+          Copy-Item packaging/LICENSES.txt dist/auto_sub/LICENSES.txt
           $mb = (Get-ChildItem dist/auto_sub -Recurse -File |
                  Measure-Object Length -Sum).Sum / 1MB
           Write-Host ("bundle size: {0:N0} MB" -f $mb)
@@ -105,3 +108,18 @@ jobs:
         with:
           name: auto_sub-windows
           path: dist/auto_sub
+
+      # Artifacts above need a GitHub login to download and expire after 90 days.
+      # A release asset is a plain link anyone can click, and it stays put.
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Compress-Archive -Path dist/auto_sub/* -DestinationPath auto_sub-windows.zip
+          $mb = (Get-Item auto_sub-windows.zip).Length / 1MB
+          Write-Host ("zip size: {0:N0} MB" -f $mb)
+          gh release create $env:GITHUB_REF_NAME auto_sub-windows.zip `
+            --title "auto_sub $env:GITHUB_REF_NAME" `
+            --notes "Windows app. Download auto_sub-windows.zip below, unzip it, and double-click auto_sub.exe. Instructions are in READ_ME_FIRST.txt inside the folder. Nothing to install."

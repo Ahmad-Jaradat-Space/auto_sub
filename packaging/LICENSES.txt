@@ -1,0 +1,32 @@
+auto_sub - licences of the parts inside this folder
+===================================================
+
+auto_sub itself
+---------------
+MIT. Source: https://github.com/Ahmad-Jaradat-Space/auto_sub
+
+ffmpeg (the ffmpeg\ folder)
+---------------------------
+The ffmpeg.exe, ffprobe.exe and .dll files in the ffmpeg\ folder are the
+"win64-gpl-shared" build from the BtbN/FFmpeg-Builds project. They are
+licensed under the GNU General Public License version 3.
+
+  Binaries:  https://github.com/BtbN/FFmpeg-Builds/releases
+  Build recipe and source: https://github.com/BtbN/FFmpeg-Builds
+  ffmpeg source: https://git.ffmpeg.org/ffmpeg.git
+  Full licence text: https://www.gnu.org/licenses/gpl-3.0.html
+
+auto_sub runs ffmpeg as a separate program. It does not link against it.
+
+Whisper speech model
+--------------------
+OpenAI Whisper, MIT. Run through faster-whisper (MIT) and CTranslate2 (MIT).
+The weights are downloaded on first use from Hugging Face, not shipped here.
+
+Noto Sans Arabic font
+---------------------
+SIL Open Font License 1.1.
+
+Qt / PySide6
+------------
+LGPL v3.
