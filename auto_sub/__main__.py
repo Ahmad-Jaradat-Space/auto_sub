@@ -36,7 +36,7 @@ def main() -> int:
     _redirect_output()
 
     from PySide6.QtWidgets import QApplication
-    from .ui.main_window import MainWindow
+    from auto_sub.ui.main_window import MainWindow
 
     app = QApplication(sys.argv)
     app.setApplicationName("auto_sub")
