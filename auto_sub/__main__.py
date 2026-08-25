@@ -43,6 +43,15 @@ def main() -> int:
     app.setOrganizationName("auto_sub")
     w = MainWindow()
     w.show()
+
+    # CI launch test: build the real window, then quit with a real exit code.
+    # Checking "is the process still alive" is not enough — PyInstaller's crash
+    # dialog blocks waiting for a click, so a crashed build looks alive forever.
+    if os.environ.get("AUTO_SUB_SMOKE"):
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(3000, app.quit)
+
     return app.exec()
 
 

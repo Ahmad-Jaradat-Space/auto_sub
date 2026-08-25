@@ -97,12 +97,31 @@ jobs:
 
       - name: Smoke-test the executable
         shell: pwsh
+        env:
+          AUTO_SUB_SMOKE: "1"
         run: |
-          # Launch headless-ish and make sure it does not crash on import.
+          # "Is the process still alive" is NOT a launch test. PyInstaller shows a
+          # crash dialog and waits for a click, so a build that dies on import looks
+          # alive forever. That is how the relative-import crash reached a user.
+          # AUTO_SUB_SMOKE makes the app build its real MainWindow, then quit, so we
+          # get a real exit code to check.
+          $log = "$env:LOCALAPPDATA\auto_sub\auto_sub.log"
+          Remove-Item $log -ErrorAction SilentlyContinue
           $p = Start-Process -FilePath dist/auto_sub/auto_sub.exe -PassThru
-          Start-Sleep -Seconds 25
-          if ($p.HasExited) { throw "auto_sub.exe exited with $($p.ExitCode)" }
-          Stop-Process -Id $p.Id -Force
+          if (-not $p.WaitForExit(120000)) {
+            Stop-Process -Id $p.Id -Force
+            throw "auto_sub.exe never exited - it is stuck, most likely on a crash dialog"
+          }
+          $p.WaitForExit()   # ensures ExitCode is populated
+          if (Test-Path $log) { Write-Host "--- auto_sub.log ---"; Get-Content $log }
+          if ($p.ExitCode -ne 0) { throw "auto_sub.exe exited with $($p.ExitCode)" }
+          if (Test-Path $log) {
+            $t = Get-Content $log -Raw
+            if ($t -match 'Traceback|ImportError|ModuleNotFoundError') {
+              throw "auto_sub.log contains a traceback"
+            }
+          }
+          Write-Host "app built its window and shut down cleanly"
 
       - uses: actions/upload-artifact@v4
         with:
