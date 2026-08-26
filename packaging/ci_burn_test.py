@@ -19,6 +19,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# The Windows CI console is cp1252 and raises UnicodeEncodeError on Arabic.
+for _s in (sys.stdout, sys.stderr):
+    if _s is not None:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+
 from auto_sub.core import burn  # noqa: E402
 from auto_sub.core.ass_writer import write_ass  # noqa: E402
 from auto_sub.core.models import Segment, Style  # noqa: E402

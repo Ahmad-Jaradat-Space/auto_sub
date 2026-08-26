@@ -24,7 +24,15 @@ def _log_path() -> Path:
 
 def _redirect_output() -> None:
     if sys.stderr is not None and sys.stderr.isatty():
-        return  # running from a terminal: keep the output visible there
+        # Running from a terminal: keep the output visible there. Force UTF-8
+        # first. A Windows console defaults to cp1252, and the burn path prints
+        # Arabic subtitle text, which would raise UnicodeEncodeError mid-export.
+        for s in (sys.stdout, sys.stderr):
+            try:
+                s.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, OSError):
+                pass
+        return
     try:
         f = open(_log_path(), "w", encoding="utf-8", buffering=1)
     except OSError:
