@@ -112,9 +112,16 @@ def probe_video(video_path: str) -> dict:
 
 
 def _escape_filter_value(path: str) -> str:
-    # In ffmpeg filter option values, ':' separates options and '\' is the
-    # escape char. Backslash both so the path is read as a single value.
-    return path.replace("\\", "\\\\").replace(":", "\\:")
+    r"""Escape a path for use inside an ffmpeg filter option value.
+
+    ffmpeg unescapes twice: once when it splits the filtergraph, again when it
+    parses a filter's options. So every literal backslash needs four, and a
+    literal colon needs \\: rather than \:. Escaping only once is enough on
+    macOS (no colons, no backslashes in paths) but breaks every Windows path:
+    C:\\Users\\... came out as C\\:\\\\Users and ffmpeg answered
+    "No option name near '\\Users\\...'", so preview and burn both failed.
+    """
+    return path.replace("\\", "\\" * 4).replace(":", "\\\\:")
 
 
 def _build_ass_filter(ass_path: str, fonts_dir: str | None) -> str:

@@ -19,6 +19,11 @@ datas += [("../auto_sub/assets", "auto_sub/assets")]
 # fails without it.
 datas += collect_data_files("faster_whisper")
 
+# reframe.py loads cv2.data.haarcascades + "haarcascade_frontalface_default.xml".
+# The stock cv2 hook collects loader config, not cv2/data/*.xml, so the default
+# "Vertical 9:16" export died with "OpenCV could not load face cascade".
+datas += collect_data_files("cv2", includes=["data/*.xml"])
+
 # CTranslate2 and onnxruntime carry native libraries PyInstaller does not find
 # by following imports alone.
 binaries += collect_dynamic_libs("ctranslate2")

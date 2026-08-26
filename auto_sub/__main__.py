@@ -28,7 +28,10 @@ def _redirect_output() -> None:
     try:
         f = open(_log_path(), "w", encoding="utf-8", buffering=1)
     except OSError:
-        return
+        # Locked-down or redirected profile. Leaving them as None is not safe:
+        # this build prints diagnostics on the Burn path, and print() to a None
+        # stream raises. Swallow the output instead of crashing the app.
+        f = open(os.devnull, "w", encoding="utf-8")
     sys.stdout = sys.stderr = f
 
 

@@ -77,23 +77,13 @@ jobs:
       - name: Burn a real subtitle with the bundled ffmpeg
         shell: pwsh
         run: |
-          # The filter being listed is not proof it works. Actually burn an .ass
-          # onto a generated clip — this is the failure that would otherwise only
-          # surface on a user's machine at step 4.
-          python -c @"
-          import sys
-          sys.path.insert(0, '.')
-          from auto_sub.core.ass_writer import write_ass
-          from auto_sub.core.models import Segment, Style
-          write_ass('t.ass', [Segment(start=0.0, end=2.0, text='مرحبا بالعالم')],
-                    Style(), 640, 480)
-          "@
-          $ff = "dist/auto_sub/ffmpeg/ffmpeg.exe"
-          & $ff -y -f lavfi -i testsrc=size=640x480:duration=3 `
-                -vf "ass=f=t.ass:fontsdir=auto_sub/assets" -c:v libx264 out.mp4
-          if ($LASTEXITCODE -ne 0) { throw "bundled ffmpeg could not burn subtitles" }
-          if (-not (Test-Path out.mp4)) { throw "no output produced" }
-          Write-Host "burned OK: $((Get-Item out.mp4).Length) bytes"
+          # Goes through burn.py's own filter building on an absolute path with a
+          # drive letter, a space and Arabic characters. The old version of this
+          # step passed relative ASCII paths straight to ffmpeg, so it stayed green
+          # while every real Windows export failed on filter escaping.
+          $env:PATH = "$PWD\dist\auto_sub\ffmpeg;$env:PATH"
+          python packaging/ci_burn_test.py
+          if ($LASTEXITCODE -ne 0) { throw "burn test failed" }
 
       - name: Smoke-test the executable
         shell: pwsh

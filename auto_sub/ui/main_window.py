@@ -515,10 +515,20 @@ class MainWindow(QMainWindow):
         segs = self._pending_burn_segs
         out = self._pending_burn_out
         ass_path = os.path.splitext(out)[0] + ".ass"
-        write_ass(
-            ass_path, segs, self.style_panel.current_style(),
-            self._video_w, self._video_h, play_res=play_res,
-        )
+        try:
+            write_ass(
+                ass_path, segs, self.style_panel.current_style(),
+                self._video_w, self._video_h, play_res=play_res,
+            )
+        except OSError as e:
+            # Read-only USB stick, network share, or a locked-down folder. Without
+            # this the UI thread raises and the user gets nothing at all.
+            QMessageBox.critical(
+                self, "Cannot write there",
+                f"Could not write the subtitle file next to your video:\n\n{e}\n\n"
+                "Pick a different output folder, for example your Desktop.",
+            )
+            return
 
         self.btn_burn.setEnabled(False)
         self.progress_bar.setRange(0, 0)
