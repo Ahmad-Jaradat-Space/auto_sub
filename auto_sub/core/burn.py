@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import sys
+from collections import deque
 from functools import cache
 from pathlib import Path
 
@@ -43,7 +44,8 @@ def _has_ass_filter(binary: str) -> bool:
     try:
         out = subprocess.run(
             [binary, "-hide_banner", "-filters"],
-            capture_output=True, text=True, check=True, **_no_window(),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            check=True, **_no_window(),
         )
     except Exception:
         return False
@@ -100,6 +102,8 @@ def probe_video(video_path: str) -> dict:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         **_no_window(),
     )
     data = json.loads(out.stdout)
@@ -172,6 +176,8 @@ def render_preview_frame(
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         **_no_window(),
     )
     if proc.returncode != 0:
@@ -200,6 +206,7 @@ def burn(
     # video produces ~36 kB of filter. Windows CreateProcess caps a command line
     # at 32767 characters and Popen fails with WinError 206 before ffmpeg starts.
     # -filter_script keeps the chain off the command line entirely.
+    tail: deque[str] = deque(maxlen=20)
     script: str | None = None
     if len(filt) > 8000:
         fd, script = tempfile.mkstemp(suffix=".ffilter", text=True)
@@ -222,9 +229,13 @@ def burn(
         output_path,
     ]
     try:
-        proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True, **_no_window())
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace", **_no_window(),
+        )
         assert proc.stderr is not None
         for line in proc.stderr:
+            tail.append(line.rstrip())
             if progress:
                 progress(line)
         proc.wait()
@@ -235,7 +246,12 @@ def burn(
             except OSError:
                 pass
     if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed with code {proc.returncode}")
+        # Without the tail every Windows failure mode -- path over 260 chars,
+        # read-only or OneDrive-locked folder, disk full, an audio codec that
+        # `-c:a copy` cannot put in an mp4 -- reads as the same bare exit code.
+        raise RuntimeError(
+            f"ffmpeg failed with code {proc.returncode}\n\n" + "\n".join(tail)
+        )
 
 
 def assets_dir() -> str:

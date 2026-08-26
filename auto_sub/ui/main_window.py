@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QAction, QKeySequence
@@ -169,7 +168,6 @@ class MainWindow(QMainWindow):
         self._video_path: str | None = None
         self._video_w = 1920
         self._video_h = 1080
-        self._tmp_dir = tempfile.mkdtemp(prefix="auto_sub_")
 
         # Dark base style + pipeline-step button styling.
         # A step is "next" (the recommended next action) when its objectName
@@ -278,6 +276,9 @@ class MainWindow(QMainWindow):
         self.timeline.changed.connect(self._on_timeline_changed)
         self.timeline.rowClicked.connect(self.player.seek_seconds)
         self.player.positionChanged.connect(self.timeline.highlight_active)
+        self.player.playbackError.connect(
+            lambda m: self.status.showMessage(f"Cannot play this video: {m}")
+        )
 
         # Initial style push so overlay has CSS.
         self.player.set_style(self.style_panel.current_style())
@@ -487,6 +488,22 @@ class MainWindow(QMainWindow):
         opts = dlg.options()
         print(f"[auto_sub] burn opts: reframe={opts.reframe} method={opts.method} {opts.target_w}x{opts.target_h}",
               file=sys.stderr, flush=True)
+
+        # We write a .ass and, for vertical, a .crop.txt next to the output.
+        # Find out now whether that folder takes writes. The vertical path used
+        # to run several minutes of face detection first and only then fail.
+        probe = os.path.join(os.path.dirname(out) or ".", ".auto_sub_write_test")
+        try:
+            with open(probe, "w") as fh:
+                fh.write("x")
+            os.unlink(probe)
+        except OSError as e:
+            QMessageBox.critical(
+                self, "Cannot write there",
+                f"That folder will not accept new files:\n\n{e}\n\n"
+                "Pick a different output folder, for example your Desktop.",
+            )
+            return
 
         self._pending_burn_segs = segs
         self._pending_burn_out = out

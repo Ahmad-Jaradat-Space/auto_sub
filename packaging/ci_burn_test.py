@@ -32,8 +32,11 @@ from auto_sub.core.models import Segment, Style  # noqa: E402
 def main() -> int:
     root = Path(tempfile.mkdtemp(prefix="auto_sub ci "))
     # Every character class that has broken a real export: space, Arabic,
-    # comma, semicolon, apostrophe, brackets.
-    work = root / "مجلد, اختبار; Ahmad's [v2]"
+    # comma, semicolon, apostrophe, brackets. "فيديو" is here for a specific
+    # reason: ffmpeg echoes the input path into its stderr as UTF-8, and the
+    # letter "ف" is d9 81 -- 0x81 is undefined in cp1252, so a Popen without an
+    # explicit encoding raises UnicodeDecodeError on a stock Windows install.
+    work = root / "فيديو مجلد, اختبار; Ahmad's [v2]"
     work.mkdir(parents=True)
 
     ass = work / "clip test.ass"
@@ -86,6 +89,20 @@ def main() -> int:
         return 1
     print(f"9:16 export:   {long_out.stat().st_size} bytes "
           f"(3600 keypoints, {cmds.stat().st_size} byte command file)")
+
+    # A failing burn must say why. Reporting only "ffmpeg failed with code 1"
+    # makes every Windows failure mode look identical in the support log.
+    try:
+        burn.burn(str(video), str(work / "missing.ass"), str(work / "nope.mp4"),
+                  fonts_dir=str(fonts))
+    except RuntimeError as e:
+        if "code" not in str(e) or len(str(e).splitlines()) < 2:
+            print(f"FAIL: burn error carries no ffmpeg detail: {e!r}", file=sys.stderr)
+            return 1
+        print("burn failure reports ffmpeg's own message")
+    else:
+        print("FAIL: burn with a missing .ass did not raise", file=sys.stderr)
+        return 1
 
     print("OK: preview, burn and a one hour 9:16 export all worked on a path with "
           "spaces, Arabic, a comma, a semicolon and an apostrophe")

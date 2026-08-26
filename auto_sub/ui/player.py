@@ -33,6 +33,7 @@ class VideoPlayer(QWidget):
 
     positionChanged = Signal(float)  # seconds
     timeClicked = Signal(float)
+    playbackError = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -156,8 +157,11 @@ class VideoPlayer(QWidget):
         self.btn_play.setText("⏸" if state == QMediaPlayer.PlayingState else "▶")
 
     def _on_error(self, err, msg) -> None:
+        # In the packaged windowed build stderr is a log file nobody opens, so
+        # an unplayable file used to show as a silent black pane.
         import sys
         print(f"[auto_sub] player error: {err} {msg}", file=sys.stderr, flush=True)
+        self.playbackError.emit(msg or str(err))
 
     def _fit_video(self, _size=None) -> None:
         native = self.video_item.nativeSize()

@@ -52,6 +52,18 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("auto_sub")
     app.setOrganizationName("auto_sub")
+
+    # libass gets the bundled Arabic font through `fontsdir`, but Qt does not,
+    # and Windows has no Noto Sans Arabic installed. Without this the live
+    # preview silently substitutes a different family and the user sees one
+    # typeface on screen and another in the exported file.
+    from PySide6.QtGui import QFontDatabase
+    from auto_sub.core.burn import assets_dir
+
+    QFontDatabase.addApplicationFont(
+        os.path.join(assets_dir(), "NotoSansArabic-Regular.ttf")
+    )
+
     w = MainWindow()
     w.show()
 
