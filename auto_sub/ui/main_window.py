@@ -104,16 +104,19 @@ class _ReframeWorker(QThread):
 
     def __init__(
         self, video: str, target_w: int, target_h: int, method: str = "face",
+        cmd_path: str | None = None,
     ) -> None:
         super().__init__()
         self._video, self._tw, self._th = video, target_w, target_h
         self._method = method
+        self._cmd_path = cmd_path
 
     def run(self) -> None:  # noqa: D401
         try:
             from ..core.reframe import reframe_filter_chain
             chain, (ow, oh) = reframe_filter_chain(
                 self._video, self._tw, self._th, method=self._method,
+                cmd_path=self._cmd_path,
             )
             self.done.emit(chain, ow, oh)
         except Exception as e:  # noqa: BLE001
@@ -493,8 +496,10 @@ class MainWindow(QMainWindow):
             self.progress_bar.setRange(0, 0)
             self.progress_bar.show()
             self.status.showMessage("Analyzing speaker position…")
+            # Next to the output, like the .ass: inspectable, and no temp litter.
             self._reframer = _ReframeWorker(
                 self._video_path, opts.target_w, opts.target_h, opts.method,
+                cmd_path=os.path.splitext(out)[0] + ".crop.txt",
             )
             self._reframer.error.connect(self._on_burn_error)
             self._reframer.done.connect(self._on_reframe_done)
@@ -528,6 +533,11 @@ class MainWindow(QMainWindow):
                 f"Could not write the subtitle file next to your video:\n\n{e}\n\n"
                 "Pick a different output folder, for example your Desktop.",
             )
+            # The vertical path already disabled Export and started the bar.
+            # Without this the user cannot retry without restarting the app.
+            self.btn_burn.setEnabled(True)
+            self.progress_bar.hide()
+            self.status.showMessage("Export cancelled: that folder is not writable.")
             return
 
         self.btn_burn.setEnabled(False)

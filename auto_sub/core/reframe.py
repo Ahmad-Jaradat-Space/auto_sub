@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
+
+from pathlib import Path
 from typing import Callable, Literal, Optional
 
-from .burn import probe_video
+from .burn import _escape_filter_value, probe_video
 
 
 Method = Literal["face", "person"]
@@ -209,27 +212,39 @@ def _downsample(track: list[tuple[float, int]], min_dt: float = 1.0) -> list[tup
     return out
 
 
-def build_crop_expr(track: list[tuple[float, int]], crop_w: int, crop_h: int) -> str:
-    """Build an ffmpeg `crop` filter with a stepwise time-varying x.
+def build_crop_expr(
+    track: list[tuple[float, int]], crop_w: int, crop_h: int, cmd_path: str
+) -> str:
+    """Build a `sendcmd,crop` chain whose x follows `track` over time.
 
-    Uses nested `if(lt(t,T),X,...)` so each keypoint holds until the next one.
+    An earlier version wrote one nested `if(lt(t,T),X,...)` per keypoint. That
+    works up to exactly 99 keypoints and then ffmpeg answers "Error
+    reinitializing filters": its expression parser caps out around 100 terms,
+    and a flat sum of `gte()` terms hits the same wall. Since the track holds
+    one keypoint per second, the 9:16 export silently broke for every video
+    longer than about a minute and a half, on every platform.
+
+    sendcmd has no expression in it at all. It reads timestamped commands from
+    a file and sets crop's `x` as playback reaches each one, so the number of
+    keypoints is unbounded and nothing lands on the command line. Verified up
+    to 3600 keypoints (one hour) against ffmpeg 8.
     """
     points = _downsample(track, min_dt=1.0)
-    if len(points) == 1:
-        x_expr = str(points[0][1])
-    else:
-        # Build from the tail: final value, then wrap each prior keypoint.
-        x_expr = str(points[-1][1])
-        for t, x in reversed(points[:-1]):
-            x_expr = f"if(lt(t,{t:.3f}),{x},{x_expr})"
-    # Note: in ffmpeg filter values, ':' separates options and ',' separates
-    # filters. The crop x-expression contains both, so wrap the whole filter
-    # value with single quotes? No — ffmpeg 8 misreads quoted blocks (see
-    # CLAUDE.md). Instead, escape the commas and colons inside the expression.
-    x_expr_escaped = x_expr.replace("\\", "\\\\").replace(",", "\\,").replace(":", "\\:")
+
+    lines = []
+    prev_x = None
+    for t, x in points:
+        if x != prev_x:  # only emit a command when the crop actually moves
+            lines.append(f"{max(0.0, t):.3f} crop x {x};")
+            prev_x = x
+    Path(cmd_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    x0 = points[0][1] if points else 0
     y_expr = f"(ih-{crop_h})/2"
-    y_expr_escaped = y_expr.replace(",", "\\,").replace(":", "\\:")
-    return f"crop=w={crop_w}:h={crop_h}:x={x_expr_escaped}:y={y_expr_escaped}"
+    return (
+        f"sendcmd=f={_escape_filter_value(cmd_path)},"
+        f"crop=w={crop_w}:h={crop_h}:x={x0}:y={y_expr}"
+    )
 
 
 def reframe_filter_chain(
@@ -238,6 +253,7 @@ def reframe_filter_chain(
     target_h: int = 1920,
     progress: Optional[Callable[[float], None]] = None,
     method: Method = "face",
+    cmd_path: str | None = None,
 ) -> tuple[str, tuple[int, int]]:
     """Full pipeline: probe → detect → smooth → ffmpeg filter chain.
 
@@ -277,6 +293,9 @@ def reframe_filter_chain(
           file=sys.stderr, flush=True)
 
     crop_w, crop_h, track = smooth_track(samples, src_w, src_h, target_aspect=target_aspect)
-    crop_filter = build_crop_expr(track, crop_w, crop_h)
+    if cmd_path is None:
+        fd, cmd_path = tempfile.mkstemp(suffix=".crop.txt", text=True)
+        os.close(fd)
+    crop_filter = build_crop_expr(track, crop_w, crop_h, cmd_path)
     chain = f"{crop_filter},scale={target_w}:{target_h}:flags=lanczos,setsar=1"
     return chain, (target_w, target_h)

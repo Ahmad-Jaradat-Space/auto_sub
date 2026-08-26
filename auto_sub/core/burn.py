@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import sys
 from functools import cache
 from pathlib import Path
@@ -114,14 +115,32 @@ def probe_video(video_path: str) -> dict:
 def _escape_filter_value(path: str) -> str:
     r"""Escape a path for use inside an ffmpeg filter option value.
 
-    ffmpeg unescapes twice: once when it splits the filtergraph, again when it
-    parses a filter's options. So every literal backslash needs four, and a
-    literal colon needs \\: rather than \:. Escaping only once is enough on
-    macOS (no colons, no backslashes in paths) but breaks every Windows path:
-    C:\\Users\\... came out as C\\:\\\\Users and ffmpeg answered
-    "No option name near '\\Users\\...'", so preview and burn both failed.
+    ffmpeg unescapes in two passes and each metacharacter belongs to a
+    different one, so a single uniform escape cannot work:
+
+      \   survives both passes, so it needs four
+      :    separates options in the second pass, so it needs \\:
+      '    opens a quoted section in the first pass, and needs \\\'
+      , ; [ ] separate filters and pads in the first pass, so one \ is enough
+
+    Getting this wrong is invisible on macOS, where paths carry none of these
+    characters, and breaks every export on Windows, where C:\Users\... is the
+    normal case and "Match, final.mp4" or "Ahmad's clips" are ordinary names.
+    Verified against ffmpeg 8 with libass for each shape above.
     """
-    return path.replace("\\", "\\" * 4).replace(":", "\\\\:")
+    out: list[str] = []
+    for ch in path:
+        if ch == "\\":
+            out.append("\\" * 4)
+        elif ch == ":":
+            out.append("\\\\:")
+        elif ch == "'":
+            out.append("\\\\\\'")
+        elif ch in ",;[]":
+            out.append("\\" + ch)
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def _build_ass_filter(ass_path: str, fonts_dir: str | None) -> str:
@@ -177,11 +196,24 @@ def burn(
     ass_filter = _build_ass_filter(ass_path, fonts_dir)
     filt = f"{extra_pre_filter},{ass_filter}" if extra_pre_filter else ass_filter
 
+    # The 9:16 crop expression carries one keypoint per second, so a 24 minute
+    # video produces ~36 kB of filter. Windows CreateProcess caps a command line
+    # at 32767 characters and Popen fails with WinError 206 before ffmpeg starts.
+    # -filter_script keeps the chain off the command line entirely.
+    script: str | None = None
+    if len(filt) > 8000:
+        fd, script = tempfile.mkstemp(suffix=".ffilter", text=True)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(filt)
+        vf_args = ["-filter_script:v", script]
+    else:
+        vf_args = ["-vf", filt]
+
     cmd = [
         _ffmpeg(),
         "-y",
         "-i", video_path,
-        "-vf", filt,
+        *vf_args,
         "-c:v", "libx264",
         "-preset", "medium",
         "-crf", "18",
@@ -189,12 +221,19 @@ def burn(
         "-movflags", "+faststart",
         output_path,
     ]
-    proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True, **_no_window())
-    assert proc.stderr is not None
-    for line in proc.stderr:
-        if progress:
-            progress(line)
-    proc.wait()
+    try:
+        proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True, **_no_window())
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            if progress:
+                progress(line)
+        proc.wait()
+    finally:
+        if script:
+            try:
+                os.unlink(script)
+            except OSError:
+                pass
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg failed with code {proc.returncode}")
 

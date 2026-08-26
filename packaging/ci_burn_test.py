@@ -31,7 +31,9 @@ from auto_sub.core.models import Segment, Style  # noqa: E402
 
 def main() -> int:
     root = Path(tempfile.mkdtemp(prefix="auto_sub ci "))
-    work = root / "مجلد اختبار"  # space in the parent, Arabic here
+    # Every character class that has broken a real export: space, Arabic,
+    # comma, semicolon, apostrophe, brackets.
+    work = root / "مجلد, اختبار; Ahmad's [v2]"
     work.mkdir(parents=True)
 
     ass = work / "clip test.ass"
@@ -68,7 +70,25 @@ def main() -> int:
 
     print(f"preview frame: {out_png.stat().st_size} bytes")
     print(f"burned video:  {burned.stat().st_size} bytes")
-    print("OK: preview and burn both worked on an absolute path with a space and Arabic characters")
+
+    # A 9:16 export of a one hour video. The old nested-if crop expression died
+    # at 99 keypoints with "Error reinitializing filters", so anything longer
+    # than about 90 seconds failed. It also used to blow past the 32767-char
+    # Windows command-line limit.
+    from auto_sub.core.reframe import build_crop_expr
+
+    cmds = work / "crop cmds.txt"
+    chain = build_crop_expr([(float(i), 100 + (i % 40)) for i in range(3600)], 270, 480, str(cmds))
+    long_out = work / "vertical out.mp4"
+    burn.burn(str(video), str(ass), str(long_out), fonts_dir=str(fonts), extra_pre_filter=chain)
+    if not long_out.exists() or long_out.stat().st_size < 1000:
+        print("FAIL: 9:16 export produced nothing", file=sys.stderr)
+        return 1
+    print(f"9:16 export:   {long_out.stat().st_size} bytes "
+          f"(3600 keypoints, {cmds.stat().st_size} byte command file)")
+
+    print("OK: preview, burn and a one hour 9:16 export all worked on a path with "
+          "spaces, Arabic, a comma, a semicolon and an apostrophe")
     return 0
 
 
