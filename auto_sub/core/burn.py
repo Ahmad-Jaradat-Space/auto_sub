@@ -116,6 +116,28 @@ def probe_video(video_path: str) -> dict:
     }
 
 
+# Audio codecs the mp4 muxer accepts. Anything else has to be re-encoded.
+_MP4_AUDIO = {"aac", "mp3", "ac3", "eac3", "alac", "mp2", "dts"}
+
+
+def probe_audio_codec(video_path: str) -> str | None:
+    """Return the first audio stream's codec name, or None if there is none."""
+    out = subprocess.run(
+        [
+            _ffprobe(),
+            "-v", "error",
+            "-select_streams", "a:0",
+            "-show_entries", "stream=codec_name",
+            "-of", "json",
+            video_path,
+        ],
+        check=True, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", **_no_window(),
+    )
+    streams = json.loads(out.stdout).get("streams", [])
+    return streams[0].get("codec_name") if streams else None
+
+
 def _escape_filter_value(path: str) -> str:
     r"""Escape a path for use inside an ffmpeg filter option value.
 
@@ -216,6 +238,19 @@ def burn(
     else:
         vf_args = ["-vf", filt]
 
+    # The open dialog accepts webm and mkv, which normally carry Vorbis or Opus.
+    # ffmpeg 8 will happily mux either into mp4, so `-c:a copy` does not fail --
+    # but QuickTime, Windows Media Player and most phones will not decode them,
+    # so the user gets an export that plays silently everywhere they send it.
+    # Re-encode to AAC unless the source codec is one mp4 players expect.
+    try:
+        acodec = probe_audio_codec(video_path)
+    except Exception:  # noqa: BLE001
+        acodec = None
+    audio_args = (
+        ["-c:a", "copy"] if acodec in _MP4_AUDIO else ["-c:a", "aac", "-b:a", "192k"]
+    )
+
     cmd = [
         _ffmpeg(),
         "-y",
@@ -224,15 +259,21 @@ def burn(
         "-c:v", "libx264",
         "-preset", "medium",
         "-crf", "18",
-        "-c:a", "copy",
+        *audio_args,
         "-movflags", "+faststart",
         output_path,
     ]
     try:
-        proc = subprocess.Popen(
-            cmd, stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
-            encoding="utf-8", errors="replace", **_no_window(),
-        )
+        try:
+            proc = subprocess.Popen(
+                cmd, stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+                encoding="utf-8", errors="replace", **_no_window(),
+            )
+        except OSError as e:
+            # Windows refuses the launch outright when the command line or a
+            # path is too long. Without this the finally-block below reads an
+            # unbound `proc` and the user sees UnboundLocalError instead.
+            raise RuntimeError(f"Could not start ffmpeg: {e}") from e
         assert proc.stderr is not None
         for line in proc.stderr:
             tail.append(line.rstrip())

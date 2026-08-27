@@ -90,6 +90,26 @@ def main() -> int:
     print(f"9:16 export:   {long_out.stat().st_size} bytes "
           f"(3600 keypoints, {cmds.stat().st_size} byte command file)")
 
+    # webm and mkv are in the open dialog and carry Vorbis or Opus. ffmpeg will
+    # mux those into mp4, but common players will not decode them, so the burn
+    # has to re-encode. This also covers a source with no audio stream at all.
+    for name, args in (
+        ("vorbis.webm", ["-c:v", "libvpx-vp9", "-c:a", "libvorbis"]),
+        ("silent.mp4", ["-c:v", "libx264", "-an"]),
+    ):
+        src = work / name
+        cmd = [ffmpeg, "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:duration=2"]
+        if "-an" not in args:
+            cmd += ["-f", "lavfi", "-i", "sine=duration=2"]
+        subprocess.run(cmd + args + [str(src)], check=True, capture_output=True)
+        dst = work / (name + ".out.mp4")
+        burn.burn(str(src), str(ass), str(dst), fonts_dir=str(fonts))
+        if not dst.exists() or dst.stat().st_size < 1000:
+            print(f"FAIL: {name} did not export", file=sys.stderr)
+            return 1
+        print(f"{name}: audio {burn.probe_audio_codec(str(src))} -> "
+              f"{burn.probe_audio_codec(str(dst))}")
+
     # A failing burn must say why. Reporting only "ffmpeg failed with code 1"
     # makes every Windows failure mode look identical in the support log.
     try:

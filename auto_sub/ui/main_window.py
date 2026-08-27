@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import sys
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -492,10 +493,14 @@ class MainWindow(QMainWindow):
         # We write a .ass and, for vertical, a .crop.txt next to the output.
         # Find out now whether that folder takes writes. The vertical path used
         # to run several minutes of face detection first and only then fail.
-        probe = os.path.join(os.path.dirname(out) or ".", ".auto_sub_write_test")
+        # mkstemp, not a fixed name: a fixed name would truncate and delete a
+        # real file if the user happened to have one called that, and the
+        # default output folder is the one holding their video.
         try:
-            with open(probe, "w") as fh:
-                fh.write("x")
+            fd, probe = tempfile.mkstemp(
+                prefix=".auto_sub_write_test", dir=os.path.dirname(out) or "."
+            )
+            os.close(fd)
             os.unlink(probe)
         except OSError as e:
             QMessageBox.critical(
